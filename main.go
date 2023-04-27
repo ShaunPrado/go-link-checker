@@ -6,19 +6,26 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"sync"
 
 	"golang.org/x/net/html"
 )
 
-func fetchAndParse(url string, depth int, ch chan<- [2]interface{}, wg *sync.WaitGroup) {
+type UrlDepth struct {
+	Url   string
+	Depth int
+}
+
+func fetchAndParse(ud UrlDepth, ch chan<- UrlDepth, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	if depth > 3 {
+	if ud.Depth > 3 {
 		return
 	}
 
-	resp, err := http.Get(url)
+	resp, err := http.Get(ud.Url)
+
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -42,7 +49,12 @@ func fetchAndParse(url string, depth int, ch chan<- [2]interface{}, wg *sync.Wai
 			if t.Data == "a" {
 				for _, a := range t.Attr {
 					if a.Key == "href" {
-						ch <- [2]interface{}{a.Val, depth + 1}
+						parsedUrl, err := url.Parse(a.Val)
+						if err != nil {
+							continue
+						}
+						absUrl := resp.Request.URL.ResolveReference(parsedUrl).String()
+						ch <- UrlDepth{Url: absUrl, Depth: ud.Depth + 1}
 						break
 					}
 				}
@@ -52,26 +64,24 @@ func fetchAndParse(url string, depth int, ch chan<- [2]interface{}, wg *sync.Wai
 }
 
 func main() {
-	sitePtr := flag.String("site", "default", "Input string")
+	sitePtr := flag.String("site", "", "Input string")
 	totalUrlsPtr := flag.Int("totalUrls", 100, "Total number of URLs to visit")
 	flag.Parse()
 
-	// Get the value of the "input" flag
-	startURL := *sitePtr
+	if *sitePtr == "" {
+		fmt.Println("Please provide a valid site URL using the -site flag.")
+		return
+	}
 
-	// Print the input value
-	fmt.Println("Input string:", startURL)
-
-	ch := make(chan [2]interface{})
+	ch := make(chan UrlDepth)
 	var wg sync.WaitGroup
 
-	// Limit the number of concurrent workers
 	workerLimit := make(chan struct{}, 10)
 
 	wg.Add(1)
 	go func() {
 		workerLimit <- struct{}{}
-		fetchAndParse(startURL, 1, ch, &wg)
+		fetchAndParse(UrlDepth{Url: *sitePtr, Depth: 1}, ch, &wg)
 		<-workerLimit
 	}()
 
@@ -89,21 +99,16 @@ func main() {
 			break
 		}
 
-		url := data[0].(string)
-		currentDepth := data[1].(int)
-		if !visited[url] {
-			visited[url] = true
-			fmt.Println(url)
+		if !visited[data.Url] {
+			visited[data.Url] = true
 			urlsVisited++
 			wg.Add(1)
-			go func(url string, depth int) {
+			go func(ud UrlDepth) {
 				workerLimit <- struct{}{}
-				fetchAndParse(url, depth, ch, &wg)
+				fetchAndParse(ud, ch, &wg)
 				<-workerLimit
-			}(url, currentDepth)
+			}(data)
 		}
 	}
-	// Print the visited URLs
-	fmt.Println("length:", len(visited))
-
+	fmt.Println("Visited URLs count:", len(visited))
 }
