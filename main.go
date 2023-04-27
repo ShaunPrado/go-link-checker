@@ -17,28 +17,25 @@ type UrlDepth struct {
 	Depth int
 }
 
-func fetchAndParse(ud UrlDepth, ch chan<- UrlDepth, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	if ud.Depth > 3 {
-		return
-	}
-
-	resp, err := http.Get(ud.Url)
-
+func getResponseBody(url string) ([]byte, error) {
+	resp, err := http.Get(url)
 	if err != nil {
-		fmt.Println(err)
-		return
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println(err)
-		return
+		return nil, err
 	}
 
+	return body, nil
+}
+
+func parseLinks(body []byte, base *url.URL) ([]string, error) {
+	var links []string
 	z := html.NewTokenizer(bytes.NewReader(body))
+
 	for {
 		tt := z.Next()
 		if tt == html.ErrorToken {
@@ -53,13 +50,45 @@ func fetchAndParse(ud UrlDepth, ch chan<- UrlDepth, wg *sync.WaitGroup) {
 						if err != nil {
 							continue
 						}
-						absUrl := resp.Request.URL.ResolveReference(parsedUrl).String()
-						ch <- UrlDepth{Url: absUrl, Depth: ud.Depth + 1}
+						absUrl := base.ResolveReference(parsedUrl).String()
+						links = append(links, absUrl)
 						break
 					}
 				}
 			}
 		}
+	}
+
+	return links, nil
+}
+
+func fetchAndParse(ud UrlDepth, ch chan<- UrlDepth, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	if ud.Depth > 3 {
+		return
+	}
+
+	body, err := getResponseBody(ud.Url)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	respUrl, err := url.Parse(ud.Url)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	links, err := parseLinks(body, respUrl)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	for _, link := range links {
+		ch <- UrlDepth{Url: link, Depth: ud.Depth + 1}
 	}
 }
 
@@ -75,7 +104,6 @@ func main() {
 
 	ch := make(chan UrlDepth)
 	var wg sync.WaitGroup
-
 	workerLimit := make(chan struct{}, 10)
 
 	wg.Add(1)
