@@ -1,5 +1,8 @@
 # Go Site Crawler
 
+[![CI/CD](https://github.com/ShaunPrado/go-link-checker/actions/workflows/go.yml/badge.svg)](https://github.com/ShaunPrado/go-link-checker/actions/workflows/go.yml)
+
+
 A simple, multithreaded site crawler and link checker in Go that crawls a given website and prints the visited URLs. The crawler operates up to a maximum depth of 3 levels and can be configured to stop after visiting a specified number of URLs.
 
 ## Features
