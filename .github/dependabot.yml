@@ -1,0 +1,11 @@
+# This configuration file specifies that Dependabot should check for updates to
+# dependencies in a Go project using go.mod and go.sum.
+# You may need to adjust the package directory if your Go modules are located
+# in a different location.
+
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "daily"
